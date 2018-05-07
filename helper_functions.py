@@ -12,40 +12,31 @@ from os.path import isfile, join
 from matplotlib import rcParams
 from sklearn.metrics import confusion_matrix
 
-def layer_outputs(image):
-    outputs = []
-    names = []
-    for layer in modulelist[1:]:
-        image = layer(image)
-        outputs.append(image)
-        names.append(str(layer))
-
-    output_im = []
-    for i in outputs:
-        i = i.squeeze(0)
-        temp = to_grayscale(i)
-        output_im.append(temp.data.cpu().numpy())
-
-    fig = plt.figure()
-    plt.rcParams["figure.figsize"] = (30, 50)
-
-
-    for i in range(9):
-        a = fig.add_subplot(8,4,i+1)
-        try:
-            imgplot = plt.imshow(output_im[i])
-            plt.axis('off')
-            a.set_title(names[i].partition('(')[0], fontsize=30)
-        except:
-            pass
-
-    plt.savefig('layer_outputs.jpg', bbox_inches='tight')
-
 def load_image(path):
+    '''
+    Loads an image using PIL's image functional
+
+    Args:
+        path: path to the image
+
+    Returns:
+        array-like
+
+    '''
     image = Image.open(path)
     return image
 
 def normalize(image):
+    '''
+    Normalizes and resizes an image using torch.transform methods
+
+    Args:
+        image: array-like
+
+    Returns:
+        image: array-like
+
+    '''
     normalize = transforms.Normalize(
     mean=[0.5, 0.5, 0.5],
     std=[0.5, 0.5, 0.5]
@@ -59,58 +50,30 @@ def normalize(image):
     return image
 
 def to_grayscale(image):
-    """
-    input is (d,w,h)
-    converts 3D image tensor to grayscale images corresponding to each channel
-    """
+    '''
+    Converts 3-channel (ex: RGB) image to greyscale
+
+    input: 3D array
+
+    output: 1D array
+    '''
     image = torch.sum(image, dim=0)
     image = torch.div(image, image.shape[0])
     return image
 
-def plot_x(cm, classes,
-                          normalize=False,
-                          title='Confusion matrix',
-                          cmap=plt.cm.Blues):
-    """
-    This function prints and plots the confusion matrix.
-    Normalization can be applied by setting `normalize=True`.
-    """
-
-    plt.imshow(cm, interpolation='nearest', cmap=cmap)
-    plt.title(title)
-    plt.colorbar()
-    tick_marks = np.arange(len(classes))
-    plt.xticks(tick_marks, classes, rotation=45)
-    plt.yticks(tick_marks, classes)
-
-    fmt = '.2f' if normalize else 'd'
-    thresh = cm.max() / 2.
-    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        plt.text(j, i, format(cm[i, j], fmt),
-                 horizontalalignment="center",
-                 color="white" if cm[i, j] > thresh else "black")
-
-    plt.tight_layout()
-    plt.ylabel('True label')
-    plt.xlabel('Predicted label')
-
-def plot_first_layer(image_path, layer):
-    x = load_image(image_path)
-    x = normalize(x)
-    x = layer(x)
-    x = x.squeeze(0)
-    plt.subplots(figsize=(10,10))
-    for i in range(6):
-        y = F.relu(x[i])
-        plt.subplot(2, 3, i+1)
-        #plt.tight_layout()
-        #plt.imshow(temp2.data.cpu().numpy(), vmin=0, vmax=10)
-        plt.imshow(y.data.cpu().numpy(), vmin = 0, vmax = 10, cmap='gnuplot2')
-        plt.colorbar()
-        title = "{:.2e}".format(np.abs(y.data.cpu().numpy().sum()))
-        plt.title(title,fontsize=20)
-
 def layers_by_classification(valid_path, class_names, net, index):
+    '''
+    Loops through validation set images and measures activation of each input layer.
+    Returns lists of names and magnitude of classes with greatest activation strengthself.
+
+    input:
+    valid_path: path to validation n_images
+    class_names: list of class names
+    net: a torch nn.Module object
+    index: index of layer to scan. Currently only first layer supported.
+
+    '''
+
     layer = list(net.modules())[index]
     layer_activation_strength = [defaultdict(float) for _ in range(layer.out_channels)]
     strongest_activator = []
@@ -145,6 +108,21 @@ def layers_by_classification(valid_path, class_names, net, index):
     return layer_activation_strength, strongest_activator
 
 def plot_first_layer_with_strongest_activator(image_path, layer, strongest_activator, net, class_names):
+    '''
+    Plots the image, and the outputs of the nodes for the first layer.
+    The dominant activating class of each node is also displayed,
+    as well as the input image's level of activation.
+
+    input:
+        image_path: path to image
+        strongest_activator: list of strongest activators, from layers_by_classification
+        net: pytorch nn.module
+        class_names: list of class names
+
+    output:
+        matplotlib plot
+    '''
+
     predicted_class, probability = predict_one_image(image_path, class_names, net)
 
     plt.subplots(figsize=(10,10))
@@ -169,7 +147,7 @@ def plot_first_layer_with_strongest_activator(image_path, layer, strongest_activ
         #plt.imshow(temp2.data.cpu().numpy(), vmin=0, vmax=10)
         plt.imshow(y.data.cpu().numpy(), vmin = 0, vmax = 5, cmap='gnuplot2')
         #plt.colorbar()
-        title = '{} layer'.format(strongest_activator[i])
+        title = '{} node'.format(strongest_activator[i])
         title += "\n{:.2}".format(np.abs(y.data.cpu().numpy().mean()))
 
         plt.title(title,fontsize=15)
@@ -178,11 +156,31 @@ def plot_first_layer_with_strongest_activator(image_path, layer, strongest_activ
     #plt.tight_layout()
 
 def imshow(img):
+    '''
+    Plots a normalized image
+
+    input: image, array-like, normalized image
+    output: plot of image
+    '''
+
     img = img / 2 + 0.5     # unnormalize
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
 
 def predict_one_image(image_path, class_names, net):
+    '''
+    Takes an image path, convolves with neural net, and returns best prediction.
+
+    inputs:
+        image_path: path to image
+        class_names: list of class names
+        net: pytorch nn.module
+
+    returns:
+        class prediction: class with highest p of membership
+        probability: p(class membership)
+
+    '''
     x = load_image(image_path)
     x = normalize(x)
     outputs = net(x)
@@ -192,6 +190,19 @@ def predict_one_image(image_path, class_names, net):
     return class_names[predicted[0]], probability
 
 def prediction_list(loader, net):
+
+    '''
+    Loops through a large number of images (ex: validation set) and returns predictions from get_net_accuracy_stats
+
+    input:
+        loader: a torch loader object
+        net: torch nn.module
+
+    returns:
+        ground_truth: the true class membership (folder name)
+        probability_list: list of probabilities of class membership with dimensions n_images x n_classes
+        prediction: list of class predictions
+    '''
     dataiter = iter(loader)
     ground_truth = []
     prediction = []
@@ -208,6 +219,21 @@ def prediction_list(loader, net):
     return ground_truth, probability_list, prediction
 
 def predict_proba_for_hidden_class(loader, net):
+
+    '''
+    Like prediction_list, but gets predictions on unlabeled data.
+
+    Loops through a large number of images (ex: validation set) and returns predictions from get_net_accuracy_stats
+
+    input:
+        loader: a torch loader object
+        net: torch nn.module
+
+    returns:
+        probability_list: list of probabilities of class membership with dimensions n_images x n_classes
+        prediction: list of class predictions
+    '''
+
     dataiter = iter(loader)
     prediction = []
     probability_list = []
@@ -229,10 +255,23 @@ def plot_confusion_matrix_hidden_class(cm, classes, hidden_class_prediction, hid
                           title='Confusion matrix',
                           cmap=plt.cm.Blues,
                                       ):
-    """
-    This function prints and plots the confusion matrix.
-    Normalization can be applied by setting `normalize=True`.
-    """
+    '''
+    Plots the confusion matrix when comparing a list of truth vs predictions.
+
+    Includes predictions and label for hidden class.
+
+    Modified from sci-kit learn's example
+
+    inputs:
+        cm: confusion matrix, array-like
+        classes: list containing names of classes
+        hidden_class_prediction: list contianing predictions for adversarial class
+        hidden_class_name: string containing name of adversarial class
+        normalize: boolean; whether to normalize the confusion matrix
+        title: string containing the title of the plot
+        cmap: plt.cm.<colormap> object
+
+    '''
 
     hidden_class_confusion = [hidden_class_prediction.count(i) for i in range(3)]
     cm = np.append(cm, [np.array(hidden_class_confusion)], axis = 0)
@@ -255,11 +294,28 @@ def plot_confusion_matrix_hidden_class(cm, classes, hidden_class_prediction, hid
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
 
-
 def plot_confusion_matrix_extra_label(cm, classes, extra_x_label, extra_y_label,
                           normalize=False,
                           title='Confusion matrix',
                           cmap=plt.cm.Blues):
+
+    '''
+    Plots the confusion matrix when comparing a list of truth vs predictions.
+
+    Includes label for hidden class
+
+    Modified from sci-kit learn's example
+
+    inputs:
+        cm: confusion matrix, array-like
+        classes: list containing names of classes
+        hidden_class_prediction: list contianing predictions for adversarial class
+        hidden_class_name: string containing name of adversarial class
+        normalize: boolean; whether to normalize the confusion matrix
+        title: string containing the title of the plot
+        cmap: plt.cm.<colormap> object
+
+    '''
 
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.title(title)
@@ -283,6 +339,24 @@ def plot_confusion_matrix(cm, classes,
                           title='Confusion matrix',
                           cmap=plt.cm.Blues):
 
+    '''
+    Plots the confusion matrix when comparing a list of truth vs predictions.
+
+    Includes predictions and label for hidden class.
+
+    Modified from sci-kit learn's example
+
+    inputs:
+        cm: confusion matrix, array-like
+        classes: list containing names of classes
+        hidden_class_prediction: list contianing predictions for adversarial class
+        hidden_class_name: string containing name of adversarial class
+        normalize: boolean; whether to normalize the confusion matrix
+        title: string containing the title of the plot
+        cmap: plt.cm.<colormap> object
+
+    '''
+
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.title(title)
     tick_marks = np.arange(len(classes))
@@ -300,9 +374,19 @@ def plot_confusion_matrix(cm, classes,
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
 
-
 def accuracy_vs_confidence_plot(ground_truth, probability_list_base_classes, prediction_base_classes, probability_list_outlier, prediction_outlier, class_names):
 
+    '''
+    For a range of confidence thresholds, plots the false-positive rate, precision, and recall, for base classes
+
+    input:
+        ground_truth: list of true labels
+        probability_list_base_classes: list of probabilities of class membership for the training set classes
+        probability_list_outlier: list of probabilities of class membership for outlier class
+        prediction_outlier: list of predictions for the outlier class
+        class_names: list of class names
+    '''
+    fig = plt.figure(figsize = (13,6))
     prediction_data = []
     for confidence_threshold in np.linspace(0,0.999,21):
 
@@ -333,17 +417,26 @@ def accuracy_vs_confidence_plot(ground_truth, probability_list_base_classes, pre
     base_class_recall = [item[2] for item in prediction_data]
     base_class_precision = [item[3] for item in prediction_data]
 
-    plt.plot(confidence_threshold, outlier_fp_rate)
-    plt.plot(confidence_threshold, base_class_recall)
-    plt.plot(confidence_threshold, base_class_precision)
-    plt.legend(['outlier false-positive rate', 'avg base class recall', 'avg base class precision'])
-    plt.xlabel('required confidence level')
-    plt.ylabel('proportion')
+    plt.plot(confidence_threshold, outlier_fp_rate, linewidth = 5)
+    plt.plot(confidence_threshold, base_class_recall, linewidth = 5)
+    plt.plot(confidence_threshold, base_class_precision, linewidth = 5)
+    plt.legend(['outlier false-positive rate', 'avg base class recall', 'avg base class precision'], fontsize = 14)
+    plt.xlabel('required confidence level', fontsize = 14)
+    plt.ylabel('proportion', fontsize = 14)
 
     plt.show()
 
-
 def plot_training_data(data_path):
+
+    '''
+    plots the first 5 images from each of 3 classes from a path
+
+    input:
+        data_path: path to data
+
+    output: 5x3 plot of images
+
+    '''
     fig, big_axes = plt.subplots( figsize=(20, 20) , nrows=3, ncols=1, sharey=True)
     base_class_names = listdir(f'{data_path}train')
 
@@ -368,6 +461,19 @@ def plot_training_data(data_path):
     plt.show()
 
 def get_data_loaders_init(data_dir):
+
+    '''
+    Constructs the data loaders according to the torch.transforms module.
+    Different from get_data_loaders to hide the fact that Dwayne Johnson exists from the notebook user
+
+    inputs:
+        data_dir: path to directory of folders containing images
+    returns:
+        class_names: list of class names
+        dataloaders: dataloader object to be initialized later with corresponding key
+
+    '''
+
     data_transforms = {
     'train': transforms.Compose([
         transforms.RandomRotation(10),
@@ -401,6 +507,17 @@ def get_data_loaders_init(data_dir):
     return class_names, dataloaders
 
 def plot_validation_data_with_prediction(data_path, class_names, net, n_images):
+
+    '''
+    Plots rows of images from each class with corresponding prediction
+
+    inputs:
+        data_path: path to data
+        class_names: list of class names
+        net: torch.nn module
+        n_images: integer - number of images to display
+    '''
+
     fig, big_axes = plt.subplots( figsize=(20, 20) , nrows=3, ncols=1, sharey=True)
     base_class_names = listdir(f'{data_path}train')
 
@@ -422,7 +539,7 @@ def plot_validation_data_with_prediction(data_path, class_names, net, n_images):
             ax.set_aspect('equal')
             ax.axis('off')
             #ax.set_title(file)
-            ax.set_title('Predicted: {}'.format(predicted_class))
+            ax.set_title('Predicted: {}\nP({:.2f})'.format(predicted_class, probability))
             count +=1
 
     fig.set_facecolor('w')
@@ -430,6 +547,17 @@ def plot_validation_data_with_prediction(data_path, class_names, net, n_images):
     plt.show()
 
 def get_data_loaders(data_dir):
+    '''
+    Constructs the data loaders according to the torch.transforms module.
+    Different from get_data_loaders to hide the fact that Dwayne Johnson exists from the notebook user
+
+    inputs:
+        data_dir: path to directory of folders containing images
+    returns:
+        class_names: list of class names
+        dataloaders: dataloader object to be initialized later with corresponding key
+
+    '''
     data_transforms = {
     'train': transforms.Compose([
         transforms.RandomRotation(10),
@@ -457,8 +585,25 @@ def get_data_loaders(data_dir):
 
     return class_names, dataloaders
 
-
 def get_net_accuracy_stats(dataloaders, net, epoch):
+
+    '''
+    Calculates precision, recall, accuracy, etc of different classes during training.
+
+    inputs:
+        dataloaders: dataloader object
+        net: torch.nn module
+        epoch: integer for current epoch
+
+    outputs:
+        list containing...
+            epoch number
+            class precisions
+            total accuracy
+            prediction confidence for base classes
+            average of prediction confidence for outlier class
+    '''
+
     validloader = dataloaders['valid']
     rockloader = dataloaders['dwayne_johnson']
     ground_truth, probability_list_base_classes, prediction = prediction_list(validloader, net)
@@ -471,8 +616,16 @@ def get_net_accuracy_stats(dataloaders, net, epoch):
 
     return([epoch+1, precisions, total_accuracy, base_class_prediction_confidence, np.mean(probability_list_dj)])
 
-
 def plot_training_stats(training_stats, class_names):
+
+    '''
+    Plots training stats vs epoch
+
+    input:
+        training_stats: list of training stats collected during net training
+        class_names: list of class names
+    '''
+
     x = [row[0] for row in training_stats]
     class_precisions = [row[1] for row in training_stats]
     total_accuracy = [row[2] for row in training_stats]
@@ -489,6 +642,24 @@ def plot_training_stats(training_stats, class_names):
     plt.show()
 
 def plot_first_layer_with_strongest_activator_resnet(image_path, layer, strongest_activator, net, class_names):
+
+    '''
+    Plots the image, and the outputs of the nodes for the first layer.
+    The dominant activating class of each node is also displayed,
+    as well as the input image's level of activation.
+
+    Configured for resnet34 (doesn't have a softmax output layer)
+
+    input:
+        image_path: path to image
+        strongest_activator: list of strongest activators, from layers_by_classification
+        net: pytorch nn.module
+        class_names: list of class names
+
+    output:
+        matplotlib plot
+    '''
+
     plt.subplots(figsize=(10,40))
     x = load_image(image_path)
     crop = transforms.RandomResizedCrop(224,scale =(0.5,1.0))
@@ -521,6 +692,22 @@ def plot_first_layer_with_strongest_activator_resnet(image_path, layer, stronges
     #plt.tight_layout()
 
 def prediction_list_resnet34(loader, net):
+
+    '''
+    Loops through a large number of images (ex: validation set) and returns predictions from get_net_accuracy_stats
+
+    Configured for resnet34 (doesn't have a softmax output layer)
+
+    input:
+        loader: a torch loader object
+        net: torch nn.module
+
+    returns:
+        ground_truth: the true class membership (folder name)
+        probability_list: list of probabilities of class membership with dimensions n_images x n_classes
+        prediction: list of class predictions
+    '''
+
     dataiter = iter(loader)
     ground_truth = []
     prediction = []
@@ -542,6 +729,22 @@ def prediction_list_resnet34(loader, net):
 
 def predict_one_image_resnet(image_path, class_names, net):
 
+    '''
+    Takes an image path, convolves with neural net, and returns best prediction.
+
+    Configured for resnet34 (no softmax layer)
+
+    inputs:
+        image_path: path to image
+        class_names: list of class names
+        net: pytorch nn.module
+
+    returns:
+        class prediction: class with highest p of membership
+        probability: p(class membership)
+
+    '''
+
     x = load_image(image_path)
     x = normalize(x)
     outputs = net(x)
@@ -553,6 +756,23 @@ def predict_one_image_resnet(image_path, class_names, net):
     return predicted.tolist()[0], probability
 
 def predict_proba_for_hidden_class_resnet34(loader, net):
+
+    '''
+    Like prediction_list, but gets predictions on unlabeled data.
+
+    Loops through a large number of images (ex: validation set) and returns predictions from get_net_accuracy_stats
+
+    Configured for resnet 34 (no softmax output layer)
+
+    input:
+        loader: a torch loader object
+        net: torch nn.module
+
+    returns:
+        probability_list: list of probabilities of class membership with dimensions n_images x n_classes
+        prediction: list of class predictions
+    '''
+
     dataiter = iter(loader)
     prediction = []
     probability_list = []
